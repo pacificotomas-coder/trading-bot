@@ -21,8 +21,8 @@ import json
 import logging
 import datetime
 import pytz
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 import trading_bot
 import trading_bot_semanal
@@ -38,21 +38,38 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# ========================== TECLADO PERSISTENTE ==========================
+
+MENU = ReplyKeyboardMarkup(
+    [[KeyboardButton("📊 Estado")],
+     [KeyboardButton("📈 Diario"), KeyboardButton("📅 Semanal")]],
+    resize_keyboard=True,
+    is_persistent=True
+)
+
 # ========================== COMANDOS ==========================
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         "🤖 <b>Toto Trading Bot activo</b>\n\n"
-        "📋 <b>Comandos:</b>\n"
-        "/diario  — Análisis diario (EMA20 + RSI)\n"
-        "/semanal — Análisis semanal (EMA20 + RSI)\n"
-        "/estado  — Posiciones abiertas\n\n"
+        "Usá los botones de abajo para controlar el bot.\n\n"
         "⏰ <b>Automático:</b>\n"
         "Lun–Vie 18:30 → análisis diario\n"
         "Domingo 20:00 → análisis semanal\n\n"
         "<i>Hora Argentina (ART)</i>"
     )
-    await update.message.reply_text(texto, parse_mode="HTML")
+    await update.message.reply_text(texto, parse_mode="HTML", reply_markup=MENU)
+
+
+async def cmd_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja los botones del teclado persistente."""
+    texto = update.message.text
+    if "Estado" in texto:
+        await cmd_estado(update, context)
+    elif "Diario" in texto:
+        await cmd_diario(update, context)
+    elif "Semanal" in texto:
+        await cmd_semanal(update, context)
 
 
 async def cmd_diario(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,6 +148,7 @@ def main():
     app.add_handler(CommandHandler("diario",  cmd_diario))
     app.add_handler(CommandHandler("semanal", cmd_semanal))
     app.add_handler(CommandHandler("estado",  cmd_estado))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_texto))
 
     # Jobs automáticos
     jq = app.job_queue
