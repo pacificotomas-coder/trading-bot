@@ -1,0 +1,16 @@
+# Estado del bot (posiciones abiertas - no subir al repo)
+bot_state.json
+bot_state_semanal.json
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDEs
+.vscode/
+.idea/
