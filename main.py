@@ -24,8 +24,10 @@ import pytz
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+import yfinance as yf
 import trading_bot
 import trading_bot_semanal
+import portfolio
 
 # ========================== CONFIGURACIÓN ==========================
 
@@ -41,7 +43,7 @@ logging.basicConfig(
 # ========================== TECLADO PERSISTENTE ==========================
 
 MENU = ReplyKeyboardMarkup(
-    [[KeyboardButton("📊 Estado")],
+    [[KeyboardButton("📊 Estado"),  KeyboardButton("💼 Cartera")],
      [KeyboardButton("📈 Diario"), KeyboardButton("📅 Semanal")]],
     resize_keyboard=True,
     is_persistent=True
@@ -53,9 +55,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         "🤖 <b>Toto Trading Bot activo</b>\n\n"
         "Usá los botones de abajo para controlar el bot.\n\n"
+        "💼 <b>Portafolio:</b>\n"
+        "/depositar 100000 → carga fondos en ARS\n"
+        "/cartera → ver posiciones y P&L\n\n"
         "⏰ <b>Automático:</b>\n"
         "Lun–Vie 18:30 → análisis diario\n"
         "Domingo 20:00 → análisis semanal\n\n"
+        "<i>El bot opera automáticamente al detectar señales con bajo riesgo.</i>\n"
         "<i>Hora Argentina (ART)</i>"
     )
     await update.message.reply_text(texto, parse_mode="HTML", reply_markup=MENU)
@@ -66,6 +72,8 @@ async def cmd_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text
     if "Estado" in texto:
         await cmd_estado(update, context)
+    elif "Cartera" in texto:
+        await cmd_cartera(update, context)
     elif "Diario" in texto:
         await cmd_diario(update, context)
     elif "Semanal" in texto:
@@ -86,6 +94,50 @@ async def cmd_semanal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trading_bot_semanal.run_check()
     except Exception as e:
         await update.message.reply_text(f"❌ Error en análisis semanal: {e}")
+
+
+async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el portafolio con P&L en tiempo real."""
+    await update.message.reply_text("⏳ Consultando precios actuales...")
+    try:
+        p          = portfolio.load()
+        posiciones = p.get("posiciones", {})
+
+        # Obtener precio actual de cada posición abierta
+        precios = {}
+        for ticker in posiciones:
+            try:
+                data = yf.download(ticker, period="2d", progress=False, auto_adjust=True)
+                if len(data) > 0:
+                    precios[ticker] = float(data['Close'].squeeze().iloc[-1])
+            except Exception:
+                pass
+
+        msg = portfolio.get_cartera_msg(precios)
+        await update.message.reply_text(msg, parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error consultando cartera: {e}")
+
+
+async def cmd_depositar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Registra un depósito de fondos. Uso: /depositar 100000"""
+    try:
+        if not context.args:
+            await update.message.reply_text(
+                "ℹ️ Uso: /depositar <monto_en_pesos>\n"
+                "Ejemplo: /depositar 100000"
+            )
+            return
+        monto = float(context.args[0].replace(",", "").replace(".", ""))
+        if monto <= 0:
+            await update.message.reply_text("❌ El monto debe ser mayor a cero.")
+            return
+        msg = portfolio.depositar(monto)
+        await update.message.reply_text(msg)
+    except ValueError:
+        await update.message.reply_text("❌ Monto inválido. Ejemplo: /depositar 100000")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
 
 
 async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -144,10 +196,12 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     # Comandos
-    app.add_handler(CommandHandler("start",   cmd_start))
-    app.add_handler(CommandHandler("diario",  cmd_diario))
-    app.add_handler(CommandHandler("semanal", cmd_semanal))
-    app.add_handler(CommandHandler("estado",  cmd_estado))
+    app.add_handler(CommandHandler("start",     cmd_start))
+    app.add_handler(CommandHandler("diario",    cmd_diario))
+    app.add_handler(CommandHandler("semanal",   cmd_semanal))
+    app.add_handler(CommandHandler("estado",    cmd_estado))
+    app.add_handler(CommandHandler("cartera",   cmd_cartera))
+    app.add_handler(CommandHandler("depositar", cmd_depositar))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_texto))
 
     # Jobs automáticos

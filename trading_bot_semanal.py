@@ -26,6 +26,8 @@ import json
 from datetime import datetime
 import yfinance as yf
 import requests
+import portfolio
+import iol_broker
 
 if sys.stdout.encoding != 'utf-8':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -45,7 +47,8 @@ TICKERS = {
         "TRAN.BA", "BYMA.BA", "METR.BA", "ECOG.BA", "EDN.BA", "TGNO4.BA"
     ],
     "CEDEARs": [
-        "NU.BA"
+        "NU.BA", "AAPL.BA", "MSFT.BA", "AMZN.BA", "GOOGL.BA",
+        "META.BA", "NVDA.BA", "TSLA.BA", "MELI.BA", "KO.BA"
     ],
     "Acciones USA": [
         "SPY", "AAPL", "MSFT", "NVDA", "TSLA", "MELI", "AMZN", "META",
@@ -246,11 +249,18 @@ def run_check():
                     print(f"  🚨 {ticker}: STOP LOSS ALCANZADO | Entrada {entrada:.2f} → Precio actual {price:.2f} ({-perdida_pct:.1f}%)")
                     stops_alcanzados.append(ticker)
                     log_alert(ticker, "STOP LOSS", rsi, price, ema)
+                    # Recuperar cantidad del portafolio ANTES de cerrar
+                    p_actual  = portfolio.load()
+                    qty_close = p_actual.get("posiciones", {}).get(ticker, {}).get("cantidad", 0)
+                    portfolio.close_position(ticker, price, "stop_loss")
+                    msg_iol = iol_broker.place_sell_order(ticker, category, qty_close, price)
+                    print(msg_iol)
                     telegram_alerts.append(
                         f"🚨 STOP LOSS (SEMANAL): <b>{ticker}</b>\n"
                         f"   Entrada: {entrada:.2f}  ({fecha_entrada})\n"
                         f"   Precio actual: {price:.2f}  ({-perdida_pct:.1f}%)\n"
-                        f"   Stop en {stop_guardado:.2f} — posición cerrada"
+                        f"   Stop en {stop_guardado:.2f} — posición cerrada\n"
+                        f"{msg_iol}"
                     )
                     # No se agrega a new_state → posición cerrada
                 else:
@@ -261,11 +271,13 @@ def run_check():
                         if nuevo_stop > stop_guardado:
                             print(f"     📈 Stop actualizado: {stop_guardado:.2f} → {nuevo_stop:.2f}")
                             pos["stop"] = nuevo_stop
+                            portfolio.update_stop(ticker, nuevo_stop)
                     elif direccion == "venta":
                         nuevo_stop = float(close_series.iloc[-30:].max())
                         if nuevo_stop < stop_guardado:
                             print(f"     📉 Stop actualizado: {stop_guardado:.2f} → {nuevo_stop:.2f}")
                             pos["stop"] = nuevo_stop
+                            portfolio.update_stop(ticker, nuevo_stop)
                     new_state[ticker] = pos   # sigue abierta
 
             if rsi < 30:
@@ -294,11 +306,21 @@ def run_check():
                         "date":      datetime.now().strftime('%Y-%m-%d')
                     }
                 if bajo_riesgo:
-                    telegram_alerts.append(
+                    msg_portfolio = portfolio.open_position(ticker, category, price, stop, "semanal")
+                    alerta = (
                         f"✅ COMPRA (SEMANAL) ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
                         f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
                         f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)"
                     )
+                    if msg_portfolio:
+                        alerta += f"\n\n{msg_portfolio}"
+                        # Ejecutar en IOL con la cantidad que calculó el portafolio
+                        p_nuevo  = portfolio.load()
+                        qty_buy  = p_nuevo.get("posiciones", {}).get(ticker, {}).get("cantidad", 0)
+                        msg_iol  = iol_broker.place_buy_order(ticker, category, qty_buy, price)
+                        print(msg_iol)
+                        alerta  += f"\n{msg_iol}"
+                    telegram_alerts.append(alerta)
 
             elif status == "SEÑAL_VENTA":
                 stop        = result["stop_venta"]

@@ -1,6 +1,10 @@
 # Estado del bot (posiciones abiertas - no subir al repo)
 bot_state.json
 bot_state_semanal.json
+portfolio_state.json
+
+# Tokens de sesión IOL (sensibles)
+iol_token.json
 
 # Logs
 *.log
