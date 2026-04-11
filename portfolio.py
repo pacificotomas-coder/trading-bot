@@ -64,24 +64,29 @@ def sincronizar_saldo() -> float:
     """
     Lee el saldo real de la cuenta IOL y actualiza fondos_disponibles.
     Descuenta las posiciones virtuales (Crypto) que no están en IOL.
-    Retorna el saldo disponible real en ARS.
+    Si la API de IOL no está disponible (fuera de horario), conserva el último saldo conocido.
+    Retorna el saldo disponible en ARS.
     """
     import iol_broker
     saldo_iol = iol_broker.get_saldo_ars()
     p = load()
-    # Descontar posiciones virtuales (Crypto) del saldo IOL
-    # ya que IOL no las ejecutó y ese dinero sigue en la cuenta
-    crypto_invertido = sum(
-        pos["monto_invertido"]
-        for pos in p["posiciones"].values()
-        if pos.get("category") == "Crypto"
-    )
-    disponible_real = max(0.0, saldo_iol - crypto_invertido)
-    p["fondos_disponibles"] = disponible_real
+
     if saldo_iol > 0:
-        p["fondos_total_depositado"] = saldo_iol  # refleja lo que hay en IOL
-    save(p)
-    return disponible_real
+        # API disponible: actualizar con datos reales
+        crypto_invertido = sum(
+            pos["monto_invertido"]
+            for pos in p["posiciones"].values()
+            if pos.get("category") == "Crypto"
+        )
+        disponible_real = max(0.0, saldo_iol - crypto_invertido)
+        p["fondos_disponibles"] = disponible_real
+        p["fondos_total_depositado"] = saldo_iol
+        p["saldo_iol_actualizado"] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        save(p)
+        return disponible_real
+    else:
+        # API no disponible (fuera de horario): conservar último saldo conocido
+        return p.get("fondos_disponibles", 0.0)
 
 
 def depositar(monto_ars: float) -> str:
@@ -233,13 +238,17 @@ def get_cartera_msg(precios: dict) -> str:
     posiciones = p["posiciones"]
     disponible = p["fondos_disponibles"]
 
+    actualizado = p.get("saldo_iol_actualizado", "—")
+
     if not posiciones and disponible == 0:
         return (
-            "💼 Portafolio vacío.\n"
-            "Depositá fondos en tu cuenta IOL para comenzar a operar."
+            "💼 <b>PORTAFOLIO</b>\n\n"
+            "Sin posiciones abiertas y sin saldo sincronizado.\n\n"
+            "El saldo se sincroniza automáticamente durante el horario de mercado (lun-vie 10:00-17:00).\n"
+            f"Última sincronización: {actualizado}"
         )
 
-    lines = ["💼 <b>PORTAFOLIO BULL MARKET</b>\n"]
+    lines = [f"💼 <b>PORTAFOLIO IOL</b>  <i>(sync: {actualizado})</i>\n"]
 
     total_invertido = 0.0
     total_pnl_ars   = 0.0
@@ -278,15 +287,12 @@ def get_cartera_msg(precios: dict) -> str:
     total_capital = disponible + total_valor
 
     lines.append(f"\n{'─'*28}")
+    lines.append(f"💵 Disponible IOL:  ${disponible:,.0f} ARS")
 
-    if total_capital > 0:
-        lines.append(f"💰 Capital total:   ${total_capital:,.0f} ARS")
+    if total_invertido > 0:
         lines.append(f"📊 Invertido:       ${total_invertido:,.0f} ARS")
-        if total_invertido > 0:
-            pnl_total_pct = (total_pnl_ars / total_invertido) * 100
-            lines.append(f"📈 P&L total:       ${total_pnl_ars:+,.0f} ARS  ({pnl_total_pct:+.1f}%)")
-        lines.append(f"💵 Disponible:      ${disponible:,.0f} ARS")
-    else:
-        lines.append(f"💵 Disponible: ${disponible:,.0f} ARS")
+        pnl_total_pct = (total_pnl_ars / total_invertido) * 100
+        lines.append(f"📈 P&L total:       ${total_pnl_ars:+,.0f} ARS  ({pnl_total_pct:+.1f}%)")
+        lines.append(f"💰 Capital total:   ${total_capital:,.0f} ARS")
 
     return "\n".join(lines)
