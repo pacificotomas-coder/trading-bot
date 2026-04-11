@@ -329,21 +329,31 @@ def run_check():
                     }
                 if bajo_riesgo:
                     msg_portfolio = portfolio.open_position(ticker, category, price, stop, "diario")
-                    alerta = (
-                        f"✅ COMPRA ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
-                        f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
-                        f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)\n"
-                        f"   2 cierres sobre EMA 20 ✓ | RSI sobrevendido reciente ✓"
-                    )
-                    if msg_portfolio:
-                        alerta += f"\n\n{msg_portfolio}"
+                    if msg_portfolio == "SIN_FONDOS":
+                        # Señal válida pero sin capital — avisar para depositar
+                        alerta = (
+                            f"💡 SEÑAL SIN FONDOS: <b>{ticker}</b>\n"
+                            f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
+                            f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)\n"
+                            f"   ⚠️ Sin capital disponible en IOL para operar.\n"
+                            f"   Depositá fondos si querés entrar en esta posición."
+                        )
+                        telegram_alerts.append(alerta)
+                    elif msg_portfolio:
+                        alerta = (
+                            f"✅ COMPRA ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
+                            f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
+                            f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)\n"
+                            f"   2 cierres sobre EMA 20 ✓ | RSI sobrevendido reciente ✓\n\n"
+                            f"{msg_portfolio}"
+                        )
                         # Ejecutar en IOL con la cantidad que calculó el portafolio
                         p_nuevo  = portfolio.load()
                         qty_buy  = p_nuevo.get("posiciones", {}).get(ticker, {}).get("cantidad", 0)
                         msg_iol  = iol_broker.place_buy_order(ticker, category, qty_buy, price)
                         print(msg_iol)
                         alerta  += f"\n{msg_iol}"
-                    telegram_alerts.append(alerta)
+                        telegram_alerts.append(alerta)
 
             elif status == "SEÑAL_VENTA":
                 stop       = result["stop_venta"]

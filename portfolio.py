@@ -22,7 +22,7 @@ PORTFOLIO_FILE = os.path.join(BASE_DIR, "portfolio_state.json")
 # ── Configuración ──────────────────────────────────────────────────────────────
 
 # Porcentaje del capital disponible a invertir por cada señal
-PORCENTAJE_POR_OPERACION = 0.30   # 30%
+PORCENTAJE_POR_OPERACION = 1.0   # 100% — invertir todo cuando hay señal
 
 # Tipo de cambio ARS/USD para posiciones en cripto (actualizar según MEP del día)
 DOLAR_ARS = 1200.0
@@ -119,11 +119,11 @@ def open_position(ticker: str, category: str, price: float, stop: float, bot: st
 
     p = load()
 
-    if p["fondos_disponibles"] <= 0:
-        return None
-
     if ticker in p["posiciones"]:
         return None  # ya hay posición abierta, no duplicar
+
+    if p["fondos_disponibles"] <= 0:
+        return "SIN_FONDOS"  # señal válida pero sin capital disponible
 
     monto_a_invertir = p["fondos_disponibles"] * PORCENTAJE_POR_OPERACION
     is_crypto        = (category == "Crypto")
