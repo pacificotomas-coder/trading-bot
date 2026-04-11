@@ -84,7 +84,7 @@ def calculate_rsi(close, period):
     delta = close.diff()
     gain  = delta.where(delta > 0, 0).ewm(alpha=1/period, adjust=False).mean()
     loss  = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
-    rs    = gain / loss
+    rs = gain / loss.replace(0, float('nan'))
     return 100 - (100 / (1 + rs))
 
 # ========================== LÓGICA DE SEÑAL ==========================
@@ -321,17 +321,25 @@ def run_check():
                         )
                         telegram_alerts.append(alerta)
                     elif msg_portfolio:
-                        alerta = (
-                            f"✅ COMPRA (SEMANAL) ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
-                            f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
-                            f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)\n\n"
-                            f"{msg_portfolio}"
-                        )
                         p_nuevo  = portfolio.load()
                         qty_buy  = p_nuevo.get("posiciones", {}).get(ticker, {}).get("cantidad", 0)
                         msg_iol  = iol_broker.place_buy_order(ticker, category, qty_buy, price)
                         print(msg_iol)
-                        alerta  += f"\n{msg_iol}"
+                        iol_ok = "✅" in msg_iol or "virtual" in msg_iol
+                        if not iol_ok:
+                            portfolio.cancel_position(ticker)
+                            alerta = (
+                                f"⚠️ ORDEN FALLIDA: <b>{ticker}</b>\n"
+                                f"   La señal era válida pero IOL rechazó la orden.\n"
+                                f"   {msg_iol}"
+                            )
+                        else:
+                            alerta = (
+                                f"✅ COMPRA (SEMANAL) ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
+                                f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
+                                f"   🛑 Stop sugerido: {stop:.2f}  (-{riesgo:.1f}% desde entrada)\n\n"
+                                f"{msg_portfolio}\n{msg_iol}"
+                            )
                         telegram_alerts.append(alerta)
 
             elif status == "SEÑAL_VENTA":

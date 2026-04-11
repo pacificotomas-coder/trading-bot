@@ -15,6 +15,10 @@ Reglas:
 import os
 import json
 from datetime import datetime
+import iol_broker
+
+# Mapa inverso: símbolo Yahoo Finance → símbolo IOL (para reconciliar posiciones)
+TICKER_MAP_INV = {yf: iol for yf, (iol, _) in iol_broker.TICKER_MAP.items()}
 
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 PORTFOLIO_FILE = os.path.join(BASE_DIR, "portfolio_state.json")
@@ -67,7 +71,6 @@ def sincronizar_saldo() -> float:
     Si la API de IOL no está disponible (fuera de horario), conserva el último saldo conocido.
     Retorna el saldo disponible en ARS.
     """
-    import iol_broker
     saldo_iol = iol_broker.get_saldo_ars()
     p = load()
 
@@ -82,6 +85,22 @@ def sincronizar_saldo() -> float:
         p["fondos_disponibles"] = disponible_real
         p["fondos_total_depositado"] = saldo_iol
         p["saldo_iol_actualizado"] = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        # Reconciliar posiciones: cerrar internamente las que ya no existen en IOL
+        # (el usuario las vendió manualmente desde la app)
+        posiciones_iol = iol_broker.get_posiciones_iol()
+        if posiciones_iol is not None:
+            tickers_a_cerrar = []
+            for ticker, pos in p["posiciones"].items():
+                if pos.get("category") == "Crypto":
+                    continue  # crypto es virtual, no está en IOL
+                simbolo_iol = TICKER_MAP_INV.get(ticker)
+                if simbolo_iol and simbolo_iol not in posiciones_iol:
+                    tickers_a_cerrar.append(ticker)
+            for ticker in tickers_a_cerrar:
+                p["posiciones"].pop(ticker, None)
+                print(f"  ℹ️  {ticker} ya no está en IOL — removido del portafolio interno")
+
         save(p)
         return disponible_real
     else:
@@ -95,7 +114,6 @@ def depositar(monto_ars: float) -> str:
     y el bot los lee automáticamente al operar.
     Este comando solo muestra el saldo real actual.
     """
-    import iol_broker
     saldo = iol_broker.get_saldo_ars()
     if saldo > 0:
         return (
@@ -216,6 +234,19 @@ def close_position(ticker: str, price_exit: float, motivo: str = "stop"):
         f"   Entrada: {entrada:,.2f} → Salida: {price_exit:,.2f}  ({pnl_pct:+.1f}%)\n"
         f"   Disponible ahora: ${p['fondos_disponibles']:,.0f} ARS"
     )
+
+
+def cancel_position(ticker: str):
+    """
+    Cancela una posición recién abierta y devuelve el capital.
+    Se usa cuando IOL rechaza la orden después de que el portafolio ya registró la compra.
+    """
+    p = load()
+    if ticker not in p["posiciones"]:
+        return
+    pos = p["posiciones"].pop(ticker)
+    p["fondos_disponibles"] += pos["monto_invertido"]
+    save(p)
 
 
 def update_stop(ticker: str, nuevo_stop: float):

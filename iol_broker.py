@@ -245,6 +245,29 @@ def place_sell_order(ticker_yf: str, category: str, cantidad: float, precio_ref:
 
 # ── Consultas de cuenta ──────────────────────────────────────────────────────────
 
+def get_posiciones_iol() -> set:
+    """
+    Devuelve el conjunto de símbolos IOL que el usuario tiene en cartera (ej: {"GGAL", "AAPL"}).
+    Retorna None si la API no está disponible (fuera de horario).
+    """
+    try:
+        r = requests.get(
+            f"{IOL_BASE}/api/v2/portafolio/Argentina",
+            headers=_headers(),
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        # La API puede retornar mensaje de mantenimiento
+        if "message" in data:
+            return None
+        activos = data.get("activos", [])
+        return {a.get("simbolo", "").upper() for a in activos if a.get("cantidad", 0) > 0}
+    except Exception:
+        return None
+
+
 def get_saldo_ars() -> float:
     """Devuelve el saldo disponible en la cuenta IOL como float en ARS. Retorna 0.0 si falla."""
     try:
