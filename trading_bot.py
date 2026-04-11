@@ -217,6 +217,10 @@ def run_check():
     print(f"  Estrategia: RSI < 30 reciente + 2 cierres sobre EMA 20")
     print(f"{'='*65}")
 
+    # Sincronizar saldo real de IOL antes de operar
+    saldo_sincronizado = portfolio.sincronizar_saldo()
+    print(f"  💵 Saldo IOL sincronizado: ${saldo_sincronizado:,.2f} ARS disponibles")
+
     # Cargar posiciones abiertas del estado anterior
     state     = load_state()
     new_state = {}   # se reconstruye en cada corrida

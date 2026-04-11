@@ -60,16 +60,47 @@ def save(p):
 
 # ── Operaciones ─────────────────────────────────────────────────────────────────
 
-def depositar(monto_ars: float) -> str:
-    """Registra un depósito de fondos en ARS."""
+def sincronizar_saldo() -> float:
+    """
+    Lee el saldo real de la cuenta IOL y actualiza fondos_disponibles.
+    Descuenta las posiciones virtuales (Crypto) que no están en IOL.
+    Retorna el saldo disponible real en ARS.
+    """
+    import iol_broker
+    saldo_iol = iol_broker.get_saldo_ars()
     p = load()
-    p["fondos_total_depositado"] += monto_ars
-    p["fondos_disponibles"]      += monto_ars
+    # Descontar posiciones virtuales (Crypto) del saldo IOL
+    # ya que IOL no las ejecutó y ese dinero sigue en la cuenta
+    crypto_invertido = sum(
+        pos["monto_invertido"]
+        for pos in p["posiciones"].values()
+        if pos.get("category") == "Crypto"
+    )
+    disponible_real = max(0.0, saldo_iol - crypto_invertido)
+    p["fondos_disponibles"] = disponible_real
+    if saldo_iol > 0:
+        p["fondos_total_depositado"] = saldo_iol  # refleja lo que hay en IOL
     save(p)
+    return disponible_real
+
+
+def depositar(monto_ars: float) -> str:
+    """
+    Ya no es necesario. Los fondos se depositan directamente en IOL
+    y el bot los lee automáticamente al operar.
+    Este comando solo muestra el saldo real actual.
+    """
+    import iol_broker
+    saldo = iol_broker.get_saldo_ars()
+    if saldo > 0:
+        return (
+            f"💡 Los fondos se gestionan directamente desde tu cuenta IOL.\n"
+            f"   No necesitás usar este comando — el bot lee tu saldo real automáticamente.\n\n"
+            f"💵 Saldo actual en IOL: ${saldo:,.2f} ARS"
+        )
     return (
-        f"✅ Depósito registrado: ${monto_ars:,.0f} ARS\n"
-        f"   Total depositado:  ${p['fondos_total_depositado']:,.0f} ARS\n"
-        f"   Disponible ahora:  ${p['fondos_disponibles']:,.0f} ARS"
+        "💡 Los fondos se gestionan directamente desde tu cuenta IOL.\n"
+        "   Depositá dinero en tu cuenta IOL y el bot lo usará automáticamente."
     )
 
 

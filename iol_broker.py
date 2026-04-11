@@ -245,8 +245,8 @@ def place_sell_order(ticker_yf: str, category: str, cantidad: float, precio_ref:
 
 # ── Consultas de cuenta ──────────────────────────────────────────────────────────
 
-def get_saldo_disponible() -> str:
-    """Consulta el saldo disponible en la cuenta IOL (ARS)."""
+def get_saldo_ars() -> float:
+    """Devuelve el saldo disponible en la cuenta IOL como float en ARS. Retorna 0.0 si falla."""
     try:
         r = requests.get(
             f"{IOL_BASE}/api/v2/cuenta/estado",
@@ -255,7 +255,15 @@ def get_saldo_disponible() -> str:
         )
         r.raise_for_status()
         data = r.json()
-        saldo = data.get("cuentas", [{}])[0].get("montoDisponible", "N/D")
-        return f"💵 Saldo IOL disponible: ${saldo:,.2f} ARS" if isinstance(saldo, (int, float)) else f"Saldo: {saldo}"
-    except Exception as e:
-        return f"⚠ No se pudo consultar saldo IOL: {e}"
+        saldo = data.get("cuentas", [{}])[0].get("montoDisponible", 0.0)
+        return float(saldo) if isinstance(saldo, (int, float)) else 0.0
+    except Exception:
+        return 0.0
+
+
+def get_saldo_disponible() -> str:
+    """Consulta el saldo disponible en la cuenta IOL (ARS) como string para Telegram."""
+    saldo = get_saldo_ars()
+    if saldo > 0:
+        return f"💵 Saldo IOL disponible: ${saldo:,.2f} ARS"
+    return "⚠ No se pudo consultar saldo IOL"

@@ -98,8 +98,11 @@ async def cmd_semanal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el portafolio con P&L en tiempo real."""
-    await update.message.reply_text("⏳ Consultando precios actuales...")
+    await update.message.reply_text("⏳ Consultando saldo IOL y precios actuales...")
     try:
+        # Sincronizar saldo real de IOL antes de mostrar
+        portfolio.sincronizar_saldo()
+
         p          = portfolio.load()
         posiciones = p.get("posiciones", {})
 
@@ -120,24 +123,9 @@ async def cmd_cartera(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_depositar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Registra un depósito de fondos. Uso: /depositar 100000"""
-    try:
-        if not context.args:
-            await update.message.reply_text(
-                "ℹ️ Uso: /depositar <monto_en_pesos>\n"
-                "Ejemplo: /depositar 100000"
-            )
-            return
-        monto = float(context.args[0].replace(",", "").replace(".", ""))
-        if monto <= 0:
-            await update.message.reply_text("❌ El monto debe ser mayor a cero.")
-            return
-        msg = portfolio.depositar(monto)
-        await update.message.reply_text(msg)
-    except ValueError:
-        await update.message.reply_text("❌ Monto inválido. Ejemplo: /depositar 100000")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
+    """Muestra el saldo real de la cuenta IOL. Los depósitos se hacen directamente en IOL."""
+    msg = portfolio.depositar(0)  # solo consulta, no modifica nada
+    await update.message.reply_text(msg)
 
 
 async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
