@@ -12,8 +12,8 @@ Comandos disponibles:
   /estado  → Muestra las posiciones abiertas
 
 Automático:
-  - Lunes a viernes a las 18:30 (hora Argentina) → análisis diario
-  - Domingos a las 20:00 (hora Argentina)        → análisis semanal
+  - Lunes a viernes cada 30 min entre 10:00 y 17:00 (hora Argentina) → análisis diario
+  - Domingos a las 20:00 (hora Argentina) → análisis semanal
 """
 
 import os
@@ -160,6 +160,16 @@ async def cmd_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========================== JOBS AUTOMÁTICOS ==========================
 
 async def job_diario(context: ContextTypes.DEFAULT_TYPE):
+    """Corre el análisis diario solo si el mercado está abierto (lun-vie 10:00-17:00 ART)."""
+    ahora = datetime.datetime.now(TZ_ARG)
+    # Solo lunes a viernes
+    if ahora.weekday() > 4:
+        return
+    # Solo entre 10:00 y 17:00
+    apertura = ahora.replace(hour=10, minute=0, second=0, microsecond=0)
+    cierre   = ahora.replace(hour=17, minute=0, second=0, microsecond=0)
+    if not (apertura <= ahora <= cierre):
+        return
     logging.info("Ejecutando análisis diario automático...")
     try:
         trading_bot.run_check()
@@ -195,11 +205,11 @@ def main():
     # Jobs automáticos
     jq = app.job_queue
 
-    # Lun–Vie a las 18:30 ART → análisis diario
-    jq.run_daily(
+    # Cada 30 minutos — el job se auto-filtra por horario de mercado (lun-vie 10:00-17:00 ART)
+    jq.run_repeating(
         job_diario,
-        time=datetime.time(hour=18, minute=30, tzinfo=TZ_ARG),
-        days=(0, 1, 2, 3, 4)   # 0=lunes … 4=viernes
+        interval=1800,   # 30 minutos en segundos
+        first=60,        # primer disparo 60s después de arrancar
     )
 
     # Domingo a las 20:00 ART → análisis semanal
