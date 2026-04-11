@@ -236,7 +236,7 @@ def get_cartera_msg(precios: dict) -> str:
     if not posiciones and disponible == 0:
         return (
             "💼 Portafolio vacío.\n"
-            "Usá /depositar <monto> para cargar fondos."
+            "Depositá fondos en tu cuenta IOL para comenzar a operar."
         )
 
     lines = ["💼 <b>PORTAFOLIO BULL MARKET</b>\n"]
