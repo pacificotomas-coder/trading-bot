@@ -50,14 +50,6 @@ TICKERS = {
         "NU.BA", "AAPL.BA", "MSFT.BA", "AMZN.BA", "GOOGL.BA",
         "META.BA", "NVDA.BA", "TSLA.BA", "MELI.BA", "KO.BA"
     ],
-    "Acciones USA": [
-        "SPY", "AAPL", "MSFT", "NVDA", "TSLA", "MELI", "AMZN", "META",
-        "GOOGL", "KO", "IBM", "ORCL", "INTC", "NU"
-    ],
-    "Crypto": [
-        "BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD", "SOL-USD",
-        "ADA-USD", "DOGE-USD"
-    ]
 }
 
 EMA_PERIOD   = 20
@@ -343,29 +335,27 @@ def run_check():
                         telegram_alerts.append(alerta)
 
             elif status == "SEÑAL_VENTA":
-                stop        = result["stop_venta"]
-                riesgo      = ((stop - price) / price) * 100
-                bajo_riesgo = riesgo <= RIESGO_MAXIMO
-                riesgo_tag  = "  ⭐ BAJO RIESGO" if bajo_riesgo else ""
-
-                print(f"  🔻 {ticker}: SEÑAL DE VENTA (SEMANAL){riesgo_tag}  | P:{price:.2f} | EMA:{ema:.2f} | RSI:{rsi:.1f}")
-                print(f"     🛑 Stop sugerido: {stop:.2f}  (máximo cierre 30 semanas, +{riesgo:.1f}% desde entrada)")
-                senales_venta.append(ticker + (" ⭐" if bajo_riesgo else ""))
+                print(f"  🔻 {ticker}: SEÑAL DE VENTA (SEMANAL) | P:{price:.2f} | EMA:{ema:.2f} | RSI:{rsi:.1f}")
                 log_alert(ticker, "SEÑAL VENTA", rsi, price, ema)
 
-                if ticker not in new_state:
-                    new_state[ticker] = {
-                        "direction": "venta",
-                        "entry":     price,
-                        "stop":      stop,
-                        "date":      datetime.now().strftime('%Y-%m-%d')
-                    }
-                if bajo_riesgo:
-                    telegram_alerts.append(
-                        f"🔻 VENTA (SEMANAL) ⭐ BAJO RIESGO: <b>{ticker}</b>\n"
+                # Solo actuar si tenemos una posición larga abierta en este ticker
+                p_actual    = portfolio.load()
+                pos_abierta = p_actual.get("posiciones", {}).get(ticker)
+                if pos_abierta and pos_abierta.get("direction") == "compra":
+                    qty_sell   = pos_abierta.get("cantidad", 0)
+                    msg_cierre = portfolio.close_position(ticker, price, "señal_venta_semanal")
+                    msg_iol    = iol_broker.place_sell_order(ticker, category, qty_sell, price)
+                    print(f"     → Cerrando posición larga: {msg_iol}")
+                    stops_alcanzados.append(ticker)
+                    alerta = (
+                        f"🔻 VENTA POR SEÑAL (SEMANAL): <b>{ticker}</b>\n"
                         f"   Precio: {price:.2f} | EMA 20: {ema:.2f} | RSI: {rsi:.1f}\n"
-                        f"   🛑 Stop sugerido: {stop:.2f}  (+{riesgo:.1f}% desde entrada)"
+                        f"   2 semanas bajo EMA 20 ✓ | RSI sobrecomprado reciente ✓\n\n"
+                        f"{msg_cierre}\n{msg_iol}"
                     )
+                    telegram_alerts.append(alerta)
+                else:
+                    senales_venta.append(ticker)
 
             elif status == "SEGUIMIENTO_COMPRA":
                 print(f"  ⏳ {ticker}: 1ra semana sobre EMA — confirma el lunes próximo | RSI {rsi:.1f} {rsi_tag}")

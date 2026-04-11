@@ -28,11 +28,8 @@ PORTFOLIO_FILE = os.path.join(BASE_DIR, "portfolio_state.json")
 # Porcentaje del capital disponible a invertir por cada señal
 PORCENTAJE_POR_OPERACION = 1.0   # 100% — invertir todo cuando hay señal
 
-# Tipo de cambio ARS/USD para posiciones en cripto (actualizar según MEP del día)
-DOLAR_ARS = 1200.0
-
-# Categorías que se gestionan en este portafolio (las que opera Bull Market)
-CATEGORIAS_BULL = {"Acciones Argentina", "CEDEARs", "Crypto"}
+# Categorías operadas a través de IOL
+CATEGORIAS_IOL = {"Acciones Argentina", "CEDEARs"}
 
 
 # ── Estado ──────────────────────────────────────────────────────────────────────
@@ -76,12 +73,7 @@ def sincronizar_saldo() -> float:
 
     if saldo_iol > 0:
         # API disponible: actualizar con datos reales
-        crypto_invertido = sum(
-            pos["monto_invertido"]
-            for pos in p["posiciones"].values()
-            if pos.get("category") == "Crypto"
-        )
-        disponible_real = max(0.0, saldo_iol - crypto_invertido)
+        disponible_real = max(0.0, saldo_iol)
         p["fondos_disponibles"] = disponible_real
         p["fondos_total_depositado"] = saldo_iol
         p["saldo_iol_actualizado"] = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -92,8 +84,6 @@ def sincronizar_saldo() -> float:
         if posiciones_iol is not None:
             tickers_a_cerrar = []
             for ticker, pos in p["posiciones"].items():
-                if pos.get("category") == "Crypto":
-                    continue  # crypto es virtual, no está en IOL
                 simbolo_iol = TICKER_MAP_INV.get(ticker)
                 if simbolo_iol and simbolo_iol not in posiciones_iol:
                     tickers_a_cerrar.append(ticker)
@@ -132,7 +122,7 @@ def open_position(ticker: str, category: str, price: float, stop: float, bot: st
     Abre una posición si hay fondos disponibles y no hay posición ya abierta.
     Retorna un mensaje de confirmación o None si no opera.
     """
-    if category not in CATEGORIAS_BULL:
+    if category not in CATEGORIAS_IOL:
         return None
 
     p = load()
@@ -144,50 +134,30 @@ def open_position(ticker: str, category: str, price: float, stop: float, bot: st
         return "SIN_FONDOS"  # señal válida pero sin capital disponible
 
     monto_a_invertir = p["fondos_disponibles"] * PORCENTAJE_POR_OPERACION
-    is_crypto        = (category == "Crypto")
-
-    if is_crypto:
-        monto_usd = monto_a_invertir / DOLAR_ARS
-        cantidad  = monto_usd / price   # fraccionaria
-        currency  = "USD"
-    else:
-        cantidad = int(monto_a_invertir / price)
-        if cantidad < 1:
-            # Precio demasiado alto para el monto disponible → no opera
-            return None
-        monto_a_invertir = cantidad * price  # ajustar al múltiplo real (sin fracción)
-        monto_usd        = None
-        currency         = "ARS"
+    cantidad = int(monto_a_invertir / price)
+    if cantidad < 1:
+        return None  # precio demasiado alto para el monto disponible
+    monto_a_invertir = cantidad * price  # ajustar al múltiplo entero real
 
     p["posiciones"][ticker] = {
         "direction":       "compra",
         "entry":           price,
         "cantidad":        cantidad,
         "monto_invertido": monto_a_invertir,
-        "monto_usd":       monto_usd,
         "stop":            stop,
         "date":            datetime.now().strftime('%Y-%m-%d'),
         "bot":             bot,
-        "currency":        currency,
         "category":        category,
     }
     p["fondos_disponibles"] -= monto_a_invertir
     save(p)
 
-    if is_crypto:
-        return (
-            f"💼 POSICIÓN ABIERTA: {ticker}\n"
-            f"   Invertido: ${monto_a_invertir:,.0f} ARS (~${monto_usd:.2f} USD)\n"
-            f"   Cantidad: {cantidad:.6f} | Precio: ${price:.2f} USD\n"
-            f"   Stop: ${stop:.2f} | Disponible: ${p['fondos_disponibles']:,.0f} ARS"
-        )
-    else:
-        return (
-            f"💼 POSICIÓN ABIERTA: {ticker}\n"
-            f"   Invertido: ${monto_a_invertir:,.0f} ARS\n"
-            f"   Cantidad: {int(cantidad)} unidades | Precio: ${price:,.2f} ARS\n"
-            f"   Stop: ${stop:,.2f} | Disponible: ${p['fondos_disponibles']:,.0f} ARS"
-        )
+    return (
+        f"💼 POSICIÓN ABIERTA: {ticker}\n"
+        f"   Invertido: ${monto_a_invertir:,.0f} ARS\n"
+        f"   Cantidad: {cantidad} unidades | Precio: ${price:,.2f} ARS\n"
+        f"   Stop: ${stop:,.2f} | Disponible: ${p['fondos_disponibles']:,.0f} ARS"
+    )
 
 
 def close_position(ticker: str, price_exit: float, motivo: str = "stop"):
@@ -199,18 +169,11 @@ def close_position(ticker: str, price_exit: float, motivo: str = "stop"):
     if ticker not in p["posiciones"]:
         return None
 
-    pos      = p["posiciones"].pop(ticker)
-    entrada  = pos["entry"]
-    cantidad = pos["cantidad"]
-    currency = pos.get("currency", "ARS")
-    monto_in = pos["monto_invertido"]
-
-    if currency == "USD":
-        resultado_usd = (price_exit - entrada) * cantidad
-        resultado_ars = resultado_usd * DOLAR_ARS
-        monto_salida  = monto_in + resultado_ars
-    else:
-        monto_salida = cantidad * price_exit
+    pos          = p["posiciones"].pop(ticker)
+    entrada      = pos["entry"]
+    cantidad     = pos["cantidad"]
+    monto_in     = pos["monto_invertido"]
+    monto_salida = cantidad * price_exit
 
     pnl_pct = ((price_exit - entrada) / entrada) * 100
 
